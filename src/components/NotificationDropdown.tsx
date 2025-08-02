@@ -135,6 +135,18 @@ export const NotificationDropdown = () => {
     return `${Math.floor(diffInMinutes / 1440)} gün önce`;
   };
 
+  const cleanNotificationUrl = (url: string) => {
+    // URL'deki hash'i temizle (örn: /post/slug#comment-id -> /post/slug)
+    let cleanUrl = url.split('#')[0];
+    
+    // /posts/ formatını /post/ formatına çevir
+    if (cleanUrl.startsWith('/posts/')) {
+      cleanUrl = cleanUrl.replace('/posts/', '/post/');
+    }
+    
+    return cleanUrl;
+  };
+
   if (!isAuthenticated) return null;
 
   return (
@@ -224,7 +236,7 @@ export const NotificationDropdown = () => {
                       </div>
                       {notification.actionUrl && (
                         <Link
-                          href={notification.actionUrl}
+                          href={cleanNotificationUrl(notification.actionUrl)}
                           className="block mt-2 text-xs text-blue-600 hover:text-blue-700 font-medium"
                           onClick={() => setIsOpen(false)}
                         >

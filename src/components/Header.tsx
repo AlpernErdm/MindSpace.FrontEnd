@@ -129,14 +129,14 @@ export default function Header() {
                         Kaydedilenler
                       </Link>
                       
-                      <Link 
+                      {/* <Link 
                         href="/settings" 
                         className="flex items-center px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                         onClick={() => setIsUserMenuOpen(false)}
                       >
                         <Settings className="h-4 w-4 mr-3" />
                         Ayarlar
-                      </Link>
+                      </Link> */}
                       
                       <hr className="my-2" />
                       

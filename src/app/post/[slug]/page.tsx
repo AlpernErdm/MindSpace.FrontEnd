@@ -10,6 +10,9 @@ import { formatDate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import Button from '@/components/ui/Button'
 import { ArrowLeft, Eye, Heart, MessageCircle, Clock, Share2, Bookmark, MoreVertical } from 'lucide-react'
+import { usersService } from '@/services/users'
+import { commentsService, Comment } from '@/services/comments'
+import { bookmarksService } from '@/services/bookmarks'
 
 const PostDetailPage: React.FC = () => {
   const params = useParams()
@@ -19,22 +22,55 @@ const PostDetailPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
   const [isLiked, setIsLiked] = useState(false)
   const [isBookmarked, setIsBookmarked] = useState(false)
+  const [isFollowing, setIsFollowing] = useState(false)
+  const [authorProfile, setAuthorProfile] = useState<any>(null)
+  const [comments, setComments] = useState<Comment[]>([])
+  const [showCommentForm, setShowCommentForm] = useState(false)
+  const [newComment, setNewComment] = useState('')
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false)
 
   const slug = params.slug as string
 
   useEffect(() => {
-    const loadPost = async () => {
-      try {
-        setIsLoading(true)
-        const postData = await postsService.getPostBySlug(slug)
-        setPost(postData)
-      } catch (error) {
-        console.error('Error loading post:', error)
-        setError('Yazı yüklenirken bir hata oluştu')
-      } finally {
-        setIsLoading(false)
-      }
+      const loadPost = async () => {
+    try {
+      setIsLoading(true)
+      const postData = await postsService.getPostBySlug(slug)
+      setPost(postData)
+      
+             // Yazar profilini yükle
+       if (postData.author?.userName) {
+         try {
+           const profile = await usersService.getUserProfile(postData.author.userName)
+           setAuthorProfile(profile)
+           setIsFollowing(profile.isFollowing)
+         } catch (error) {
+           console.error('Yazar profili yüklenirken hata:', error)
+         }
+       }
+       
+       // Yorumları yükle
+       try {
+         const commentsResponse = await commentsService.getPostComments(postData.id)
+         setComments(commentsResponse.comments || [])
+       } catch (error) {
+         console.error('Yorumlar yüklenirken hata:', error)
+       }
+       
+       // Bookmark durumunu kontrol et
+       try {
+         const bookmarkStatus = await bookmarksService.checkBookmarkStatus(postData.id)
+         setIsBookmarked(bookmarkStatus.isBookmarked)
+       } catch (error) {
+         console.error('Bookmark durumu kontrol edilirken hata:', error)
+       }
+    } catch (error) {
+      console.error('Error loading post:', error)
+      setError('Yazı yüklenirken bir hata oluştu')
+    } finally {
+      setIsLoading(false)
     }
+  }
 
     if (slug) {
       loadPost()
@@ -55,8 +91,15 @@ const PostDetailPage: React.FC = () => {
       // Redirect to login
       return
     }
-    setIsBookmarked(!isBookmarked)
-    // TODO: API call to bookmark/unbookmark post
+    
+    if (!post) return
+    
+    try {
+      const response = await bookmarksService.toggleBookmark(post.id)
+      setIsBookmarked(response.isBookmarked)
+    } catch (error) {
+      console.error('Bookmark işlemi sırasında hata:', error)
+    }
   }
 
   const handleShare = () => {
@@ -72,6 +115,60 @@ const PostDetailPage: React.FC = () => {
       // TODO: Show toast notification
     }
   }
+
+  const handleFollow = async () => {
+    if (!isAuthenticated) {
+      // Login sayfasına yönlendir
+      return
+    }
+    
+    if (!post?.author?.userName) return
+    
+    try {
+      const response = await usersService.toggleFollow(post.author.userName)
+      setIsFollowing(response.isFollowing)
+      
+      // Profil bilgilerini güncelle
+      if (authorProfile) {
+        setAuthorProfile({
+          ...authorProfile,
+          followerCount: response.isFollowing 
+            ? authorProfile.followerCount + 1 
+            : authorProfile.followerCount - 1
+        })
+      }
+         } catch (error) {
+       console.error('Takip işlemi sırasında hata:', error)
+     }
+   }
+
+   const handleCommentSubmit = async () => {
+     if (!isAuthenticated) {
+       // Login sayfasına yönlendir
+       return
+     }
+     
+     if (!newComment.trim() || !post) return
+     
+     try {
+       setIsSubmittingComment(true)
+       
+       const response = await commentsService.createComment({
+         content: newComment,
+         postId: post.id
+       })
+       
+       // Yeni yorumu listeye ekle
+       setComments(prev => [response, ...prev])
+       setNewComment('')
+       setShowCommentForm(false)
+       
+     } catch (error) {
+       console.error('Yorum gönderilirken hata:', error)
+     } finally {
+       setIsSubmittingComment(false)
+     }
+   }
 
   if (isLoading) {
     return (
@@ -265,24 +362,25 @@ const PostDetailPage: React.FC = () => {
       {/* Engagement Actions */}
       <div className="flex items-center justify-between py-6 border-t border-b border-gray-200 mb-8">
         <div className="flex items-center space-x-4">
-          <Button
-            variant={isLiked ? "primary" : "outline"}
-            size="sm"
-            onClick={handleLike}
-            className="flex items-center space-x-2"
-          >
-            <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} />
-            <span>{post.likeCount} {isLiked ? 'Beğendin' : 'Beğen'}</span>
-          </Button>
+                     <Button
+             variant={isLiked ? "primary" : "outline"}
+             size="sm"
+             onClick={handleLike}
+             className="flex items-center space-x-2"
+           >
+             <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} />
+             <span>{isLiked ? 'Beğendin' : 'Beğen'}</span>
+           </Button>
           
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex items-center space-x-2"
-          >
-            <MessageCircle className="w-4 h-4" />
-            <span>Yorum Yap</span>
-          </Button>
+                     <Button
+             variant="outline"
+             size="sm"
+             onClick={() => setShowCommentForm(!showCommentForm)}
+             className="flex items-center space-x-2"
+           >
+             <MessageCircle className="w-4 h-4" />
+             <span>Yorum Yap</span>
+           </Button>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -327,23 +425,117 @@ const PostDetailPage: React.FC = () => {
               <p className="text-gray-600 mb-3">{post.author.bio}</p>
             )}
             <div className="flex items-center space-x-4 text-sm text-gray-500">
-              <span>{post.author.followerCount} takipçi</span>
-              <span>{post.author.followingCount} takip edilen</span>
+              <span>{authorProfile?.followerCount || post.author.followerCount || 0} takipçi</span>
+              <span>{authorProfile?.followingCount || post.author.followingCount || 0} takip edilen</span>
             </div>
             <div className="mt-3">
-              <Button size="sm">Takip Et</Button>
+              {user?.userName !== post.author.userName && (
+                <Button 
+                  size="sm"
+                  onClick={handleFollow}
+                  className={`${
+                    isFollowing 
+                      ? 'bg-gray-600 hover:bg-gray-700' 
+                      : 'bg-emerald-600 hover:bg-emerald-700'
+                  } text-white`}
+                >
+                  {isFollowing ? 'Takibi Bırak' : 'Takip Et'}
+                </Button>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Related Posts - TODO: Implement */}
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">İlgili Yazılar</h2>
-        <div className="text-center py-8 text-gray-500">
-          İlgili yazılar yakında eklenecek...
-        </div>
-      </div>
+             {/* Comments Section */}
+       <div className="mb-8">
+         <h2 className="text-2xl font-bold text-gray-900 mb-6">
+           Yorumlar ({comments.length})
+         </h2>
+         
+                   {/* Comment Form */}
+          {showCommentForm && (
+            <div className="mb-6">
+              <div className="flex items-start space-x-3">
+                <div className="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                  {user?.firstName?.[0] || user?.userName?.[0]?.toUpperCase() || 'U'}
+                </div>
+                <div className="flex-1">
+                  <textarea
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder="Yorumunuzu yazın..."
+                    rows={2}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none"
+                    autoFocus
+                  />
+                  <div className="flex justify-end space-x-2 mt-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setShowCommentForm(false)
+                        setNewComment('')
+                      }}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      İptal
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleCommentSubmit}
+                      disabled={!newComment.trim() || isSubmittingComment}
+                      isLoading={isSubmittingComment}
+                    >
+                      Yorum Gönder
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+         
+         {/* Comments List */}
+         {comments.length > 0 ? (
+           <div className="space-y-4">
+             {comments.map((comment) => (
+               <div key={comment.id} className="bg-white rounded-lg p-4 border border-gray-200">
+                 <div className="flex items-start space-x-3">
+                   <div className="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                     {comment.author.firstName?.[0] || comment.author.userName[0]?.toUpperCase()}
+                   </div>
+                   <div className="flex-1">
+                     <div className="flex items-center space-x-2 mb-2">
+                       <span className="font-medium text-gray-900">
+                         {comment.author.firstName && comment.author.lastName 
+                           ? `${comment.author.firstName} ${comment.author.lastName}`
+                           : comment.author.userName
+                         }
+                       </span>
+                       <span className="text-sm text-gray-500">
+                         {formatDate(comment.createdAt)}
+                       </span>
+                     </div>
+                     <p className="text-gray-700">{comment.content}</p>
+                   </div>
+                 </div>
+               </div>
+             ))}
+           </div>
+         ) : (
+           <div className="text-center py-8 text-gray-500">
+             Henüz yorum yapılmamış. İlk yorumu siz yapın!
+           </div>
+         )}
+       </div>
+
+       {/* Related Posts - TODO: Implement */}
+       <div>
+         <h2 className="text-2xl font-bold text-gray-900 mb-6">İlgili Yazılar</h2>
+         <div className="text-center py-8 text-gray-500">
+           İlgili yazılar yakında eklenecek...
+         </div>
+       </div>
     </div>
   )
 }

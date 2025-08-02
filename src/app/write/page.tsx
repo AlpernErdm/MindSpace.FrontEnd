@@ -4,12 +4,15 @@ import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { postsService } from '@/services/posts'
-import { CreatePostRequest, UpdatePostRequest, Post } from '@/types'
+import { CreatePostRequest, UpdatePostRequest, Post, PostStatus } from '@/types'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
-import { Save, Eye, Globe, ArrowLeft } from 'lucide-react'
+import { Save, Eye, Globe, ArrowLeft, Upload, X } from 'lucide-react'
 import Link from 'next/link'
+import { uploadService } from '@/services/upload'
+
+
 
 const WritePage: React.FC = () => {
   const router = useRouter()
@@ -21,20 +24,25 @@ const WritePage: React.FC = () => {
     content: '',
     excerpt: '',
     featuredImageUrl: '',
+    status: 0 as PostStatus, // Draft as default
     tags: [] as string[],
     metaDescription: '',
     metaKeywords: ''
   })
   
+
   const [tagInput, setTagInput] = useState('')
   
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isPublishing, setIsPublishing] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const [errors, setErrors] = useState<{ [key: string]: string }>({})
   const [isEditing, setIsEditing] = useState(false)
   const [editPostId, setEditPostId] = useState<string | null>(null)
   const [showPreview, setShowPreview] = useState(false)
+
+
 
   // Check if editing existing post
   useEffect(() => {
@@ -64,15 +72,16 @@ const WritePage: React.FC = () => {
         return
       }
       
-      setFormData({
-        title: post.title,
-        content: post.content,
-        excerpt: post.excerpt || '',
-        featuredImageUrl: post.featuredImageUrl || '',
-        tags: post.tags?.map(tag => tag.name) || [],
-        metaDescription: post.metaDescription || '',
-        metaKeywords: post.metaKeywords || ''
-      })
+              setFormData({
+          title: post.title,
+          content: post.content,
+          excerpt: post.excerpt || '',
+          featuredImageUrl: post.featuredImageUrl || '',
+          status: post.status,
+          tags: post.tags?.map(tag => tag.name) || [],
+          metaDescription: post.metaDescription || '',
+          metaKeywords: post.metaKeywords || ''
+        })
     } catch (error) {
       console.error('Error loading post:', error)
       router.push('/')
@@ -81,7 +90,7 @@ const WritePage: React.FC = () => {
     }
   }
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
     
@@ -110,6 +119,34 @@ const WritePage: React.FC = () => {
     }
   }
 
+  const handleFileUpload = async (file: File) => {
+    try {
+      setIsUploading(true)
+      setErrors(prev => ({ ...prev, featuredImageUrl: '' }))
+      
+      const response = await uploadService.uploadImage(file)
+      
+      if (response.success) {
+        setFormData(prev => ({ ...prev, featuredImageUrl: response.fileUrl }))
+      }
+    } catch (error: any) {
+      console.error('Upload error:', error)
+      setErrors(prev => ({ 
+        ...prev, 
+        featuredImageUrl: error.response?.data?.message || 'Dosya yüklenirken hata oluştu' 
+      }))
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      handleFileUpload(file)
+    }
+  }
+
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {}
 
@@ -120,6 +157,8 @@ const WritePage: React.FC = () => {
     if (!formData.content.trim()) {
       newErrors.content = 'İçerik gerekli'
     }
+
+    // Category is optional, so we don't validate it
 
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -134,7 +173,12 @@ const WritePage: React.FC = () => {
         const updateData: UpdatePostRequest = formData
         await postsService.updatePost(editPostId, updateData)
       } else {
-        const createData: CreatePostRequest = formData
+        const createData: CreatePostRequest = {
+          ...formData,
+          status: formData.status
+        }
+        console.log('Sending data to backend:', JSON.stringify(createData, null, 2))
+        console.log('Status type:', typeof createData.status)
         const newPost = await postsService.createPost(createData)
         setIsEditing(true)
         setEditPostId(newPost.id)
@@ -144,10 +188,11 @@ const WritePage: React.FC = () => {
       }
       
       // TODO: Show success toast
-    } catch (error) {
-      console.error('Error saving draft:', error)
-      setErrors({ general: 'Taslak kaydedilirken bir hata oluştu' })
-    } finally {
+         } catch (error: any) {
+       console.error('Error saving draft:', error)
+       console.error('Error response:', error.response?.data)
+       setErrors({ general: 'Taslak kaydedilirken bir hata oluştu' })
+     } finally {
       setIsSaving(false)
     }
   }
@@ -161,7 +206,12 @@ const WritePage: React.FC = () => {
 
       // First save as draft if it's a new post
       if (!isEditing) {
-        const createData: CreatePostRequest = formData
+        const createData: CreatePostRequest = {
+          ...formData,
+          status: formData.status
+        }
+        console.log('Sending data to backend (publish):', JSON.stringify(createData, null, 2))
+        console.log('Status type (publish):', typeof createData.status)
         const newPost = await postsService.createPost(createData)
         postId = newPost.id
       } else if (editPostId) {
@@ -174,10 +224,11 @@ const WritePage: React.FC = () => {
         await postsService.publishPost(postId)
         router.push('/')
       }
-    } catch (error) {
-      console.error('Error publishing post:', error)
-      setErrors({ general: 'Yazı yayınlanırken bir hata oluştu' })
-    } finally {
+         } catch (error: any) {
+       console.error('Error publishing post:', error)
+       console.error('Error response:', error.response?.data)
+       setErrors({ general: 'Yazı yayınlanırken bir hata oluştu' })
+     } finally {
       setIsPublishing(false)
     }
   }
@@ -279,6 +330,8 @@ const WritePage: React.FC = () => {
               </div>
             )}
             
+
+            
             {/* Tags in Preview */}
             {formData.tags.length > 0 && (
               <div className="mb-6">
@@ -331,26 +384,64 @@ const WritePage: React.FC = () => {
             />
           </div>
 
+
+
           {/* Featured Image */}
           <div>
-            <Input
-              label="Öne Çıkan Görsel URL (İsteğe bağlı)"
-              name="featuredImageUrl"
-              type="url"
-              value={formData.featuredImageUrl}
-              onChange={handleInputChange}
-              placeholder="https://example.com/image.jpg"
-              helperText="Yazınızın başında görünecek görselin URL'sini girin"
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Öne Çıkan Görsel
+            </label>
             
+            {/* File Upload */}
+            <div className="mb-4">
+              <div className="flex items-center space-x-4">
+                <label className="cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileChange}
+                    className="hidden"
+                    disabled={isUploading}
+                  />
+                  <div className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">
+                    <Upload className="w-4 h-4" />
+                    <span>{isUploading ? 'Yükleniyor...' : 'Resim Yükle'}</span>
+                  </div>
+                </label>
+                
+                <span className="text-sm text-gray-500">veya</span>
+                
+                <Input
+                  name="featuredImageUrl"
+                  type="url"
+                  value={formData.featuredImageUrl}
+                  onChange={handleInputChange}
+                  placeholder="https://example.com/image.jpg"
+                  className="flex-1"
+                />
+              </div>
+              
+              {errors.featuredImageUrl && (
+                <p className="mt-2 text-sm text-red-600">{errors.featuredImageUrl}</p>
+              )}
+            </div>
+            
+            {/* Image Preview */}
             {formData.featuredImageUrl && (
-              <div className="mt-4">
+              <div className="relative">
                 <img
                   src={formData.featuredImageUrl}
                   alt="Preview"
                   className="w-full h-64 object-cover rounded-lg"
                   onError={() => setFormData(prev => ({ ...prev, featuredImageUrl: '' }))}
                 />
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, featuredImageUrl: '' }))}
+                  className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             )}
           </div>

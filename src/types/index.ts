@@ -73,6 +73,7 @@ export interface CreatePostRequest {
   content: string
   excerpt?: string
   featuredImageUrl?: string
+  status: PostStatus
   categoryId?: string
   tags?: string[]
   metaDescription?: string

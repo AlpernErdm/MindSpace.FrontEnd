@@ -9,7 +9,20 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+        port: '7237',
+        pathname: '/uploads/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'localhost',
+        port: '7237',
+        pathname: '/uploads/**',
+      },
     ],
+    unoptimized: true, // Backend resimleri için optimization'ı kapat
   },
 };
 

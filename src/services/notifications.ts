@@ -32,7 +32,7 @@ export const notificationsService = {
 
   // Bildirimi okundu olarak işaretle
   markAsRead: async (notificationId: string): Promise<void> => {
-    await api.put(`/notifications/${notificationId}/read`);
+    await api.put(`/notifications/${notificationId}/mark-read`);
   },
 
   // Tüm bildirimleri okundu olarak işaretle
@@ -43,7 +43,7 @@ export const notificationsService = {
   // Okunmamış bildirim sayısını getir
   getUnreadCount: async (): Promise<number> => {
     const response = await api.get('/notifications/unread-count');
-    return response.data.count;
+    return response.data.unreadCount;
   },
 
   // Bildirimi sil
